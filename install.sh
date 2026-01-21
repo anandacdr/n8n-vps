@@ -1,10 +1,9 @@
 #!/bin/bash
 
 DOMAIN="n8n.anovoxlabs.com"
-EMAIL="info.anandachaudhary@gmail.com"
 
 echo "============================================"
-echo "  n8n Installation for $DOMAIN"
+echo "  n8n Installation with Cloudflare Tunnel"
 echo "============================================"
 
 # Update system
@@ -27,95 +26,62 @@ sudo chown -R 1000:1000 /root/n8n_data
 sudo chmod -R 755 /root/n8n_data
 echo "✅ Data directory ready!"
 
-# Create certbot directories
-echo "🔐 Setting up SSL directories..."
-mkdir -p certbot/conf certbot/www
+# Get Cloudflare Tunnel token
+echo ""
+echo "============================================"
+echo "  Cloudflare Tunnel Setup"
+echo "============================================"
+echo ""
+echo "To get your tunnel token:"
+echo "1. Go to Cloudflare Dashboard > Zero Trust > Networks > Tunnels"
+echo "2. Create a tunnel or select existing one"
+echo "3. Click 'Configure' > Copy the token from the install command"
+echo "   (It's the long string after 'cloudflared service install')"
+echo ""
+read -p "Enter your Cloudflare Tunnel Token: " TUNNEL_TOKEN
 
-# Create temporary nginx config for SSL certificate generation
-echo "📝 Creating temporary nginx config for SSL..."
-cat > nginx.conf << 'NGINXCONF'
-events {
-    worker_connections 1024;
-}
+if [ -z "$TUNNEL_TOKEN" ]; then
+    echo "❌ No token provided. Exiting."
+    exit 1
+fi
 
-http {
-    server {
-        listen 80;
-        server_name n8n.anovoxlabs.com;
+# Create compose.yaml with cloudflared
+echo "📝 Creating Docker Compose configuration..."
+cat > compose.yaml << 'EOF'
+services:
+  svr_n8n:
+    image: n8nio/n8n
+    container_name: n8n_container
+    restart: unless-stopped
+    environment:
+      - N8N_HOST=n8n.anovoxlabs.com
+      - N8N_PROTOCOL=https
+      - N8N_SECURE_COOKIE=true
+      - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+      - N8N_EDITOR_BASE_URL=https://n8n.anovoxlabs.com
+      - WEBHOOK_URL=https://n8n.anovoxlabs.com
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+    ports:
+      - "5678:5678"
+    volumes:
+      - /root/n8n_data:/home/node/.n8n
 
-        location /.well-known/acme-challenge/ {
-            root /var/www/certbot;
-        }
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - svr_n8n
+EOF
 
-        location / {
-            return 200 'Setting up SSL...';
-            add_header Content-Type text/plain;
-        }
-    }
-}
-NGINXCONF
+# Create .env file with token
+echo "TUNNEL_TOKEN=$TUNNEL_TOKEN" > .env
 
-# Start nginx temporarily
-echo "🚀 Starting nginx for SSL verification..."
-sudo docker compose up -d nginx
-
-# Wait for nginx to start
-sleep 5
-
-# Get SSL certificate
-echo "🔐 Obtaining SSL certificate..."
-sudo docker compose run --rm certbot certonly --webroot --webroot-path=/var/www/certbot \
-    --email $EMAIL --agree-tos --no-eff-email \
-    -d $DOMAIN
-
-# Restore full nginx config with SSL
-echo "📝 Updating nginx config with SSL..."
-cat > nginx.conf << 'NGINXCONF'
-events {
-    worker_connections 1024;
-}
-
-http {
-    server {
-        listen 80;
-        server_name n8n.anovoxlabs.com;
-
-        location /.well-known/acme-challenge/ {
-            root /var/www/certbot;
-        }
-
-        location / {
-            return 301 https://$host$request_uri;
-        }
-    }
-
-    server {
-        listen 443 ssl;
-        server_name n8n.anovoxlabs.com;
-
-        ssl_certificate /etc/letsencrypt/live/n8n.anovoxlabs.com/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/n8n.anovoxlabs.com/privkey.pem;
-
-        location / {
-            proxy_pass http://svr_n8n:5678;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_buffering off;
-            proxy_cache off;
-            chunked_transfer_encoding off;
-        }
-    }
-}
-NGINXCONF
-
-# Start all services
+# Start services
 echo "🚀 Starting all services..."
-sudo docker compose down
 sudo docker compose up -d
 
 echo ""
@@ -123,10 +89,17 @@ echo "============================================"
 echo "  ✅ Installation Complete!"
 echo "============================================"
 echo ""
-echo "  Your n8n instance is now available at:"
-echo "  https://$DOMAIN"
+echo "  IMPORTANT: Configure your tunnel in Cloudflare Dashboard:"
 echo ""
-echo "  First time? Create your admin account at:"
-echo "  https://$DOMAIN/setup"
+echo "  1. Go to: Cloudflare Dashboard > Zero Trust > Networks > Tunnels"
+echo "  2. Click on your tunnel > 'Public Hostname' tab"
+echo "  3. Add a public hostname:"
+echo "     - Subdomain: n8n"
+echo "     - Domain: anovoxlabs.com"
+echo "     - Service Type: HTTP"
+echo "     - URL: svr_n8n:5678"
+echo ""
+echo "  Once configured, access n8n at:"
+echo "  https://$DOMAIN"
 echo ""
 echo "============================================"

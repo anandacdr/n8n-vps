@@ -1,0 +1,38 @@
+services:
+  svr_n8n:
+    image: n8nio/n8n
+    container_name: n8n_container
+    restart: unless-stopped
+    environment:
+      - N8N_HOST=n8n.anovoxlabs.com
+      - N8N_PROTOCOL=https
+      - N8N_SECURE_COOKIE=true
+      - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+      - N8N_EDITOR_BASE_URL=https://n8n.anovoxlabs.com
+      - WEBHOOK_URL=https://n8n.anovoxlabs.com
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+    ports:
+      - "5678:5678"
+    volumes:
+      - /root/n8n_data:/home/node/.n8n
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      - svr_n8n
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot

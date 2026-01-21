@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DOMAIN="n8n.anovoxlabs.com"
-EMAIL="your-email@example.com"  # Change this to your email for SSL notifications
+EMAIL="info.anandachaudhary@gmail.com"
 
 echo "============================================"
 echo "  n8n Installation for $DOMAIN"
